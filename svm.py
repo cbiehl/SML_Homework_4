@@ -21,24 +21,18 @@ def read_iris_data(filepath):
 
 def rbf_kernel(x, z, sigma=.4):
     """gaussian kernel"""
-    return np.exp(-(np.linalg.norm(x - z, ord=2) ** 2) / (2 * sigma ** 2))
+    # return np.exp(-(np.linalg.norm(x - z, ord=2) ** 2) / (2 * sigma ** 2))
+    return np.exp(-3 * np.sum((x - z) ** 2))
 
 
 def plot_data(x, y):
-    # TODO: extend to show margin and misclassifications
     plt.figure()
-    c = []
-    for label in y:
-        if label == 1.0:
-            c.append('blue')
-        else:
-            c.append('orange')
-
-    plt.scatter(x[:, 0], x[:, 1], c=c)
+    plt.scatter(x[:, 0], x[:, 1], c=y)
     plt.xlabel("x1")
     plt.ylabel("x2")
     plt.title("Iris dataset")
-    # plt.legend()
+    plt.legend()
+    plt.show()
 
 
 class SVM:
@@ -57,7 +51,6 @@ class SVM:
 
         # evaluate kernel function for all pairs and buffer results
         # (similar to kernel PCA as described by Bishop)
-        # TODO: might this one get prohibitively large? Need scipy sparse matrix?
         self.K = np.ndarray(shape=(X.shape[0], X.shape[0]))
         for i, xi in enumerate(X):
             for j, xj in enumerate(X):
@@ -65,25 +58,20 @@ class SVM:
 
         # solve lagrangian dual using cvxopt quadratic optimization
         # note that the "matrix" objects are cvxopt objects, not numpy
-        # TODO: bias!
 
-        # general SVM
-        # Q = matrix(np.outer(y, y) * self.K)
-        # p = matrix(np.ones(self.K.shape[0]) * -1)
+        # P = matrix(np.outer(y,y) * self.K)
+        # q = matrix(np.ones(self.K.shape[0]) * -1)
         # A = matrix(y, (1, self.K.shape[0]))
         # b = matrix(0.0)
         #
         # tmp1 = np.diag(np.ones(self.K.shape[0]) * -1)
         # tmp2 = np.identity(self.K.shape[0])
-        # G_x = matrix(np.vstack((tmp1, tmp2)))
+        # G = matrix(np.vstack((tmp1, tmp2)))
         # tmp1 = np.zeros(self.K.shape[0])
         # tmp2 = np.ones(self.K.shape[0]) * self.C
-        # h_x = matrix(np.hstack((tmp1, tmp2)))
+        # h = matrix(np.hstack((tmp1, tmp2)))
         #
-        # G_slack = matrix(np.diag(np.ones(self.K.shape[0])))
-        # h_slack = matrix(np.ones(self.K.shape[0]) * self.C)
-        # G = matrix(np.vstack((G_x, G_slack)))
-        # h = matrix(np.vstack((h_x, h_slack)))
+        # solution = solvers.qp(P, q, G, h, A, b)
 
         Q = matrix(np.outer(y, y) * self.K)
         p = matrix(np.ones(self.K.shape[0]) * -1)
@@ -105,11 +93,12 @@ class SVM:
         print(self.alphas)
 
         # save the support vectors (i.e. the ones with non-zero alphas) and their y values
-        sv_index = np.where(self.min_sv_alpha < self.alphas)
-        print('\nNumber of support vectors:', sv_index[0].shape[0], end='\n\n')
-        self.support_alphas = self.alphas[sv_index]
-        self.support_vectors = X[sv_index]
-        self.targets = y[sv_index]
+        # sv_index = np.where(self.min_sv_alpha < self.alphas)
+        self.support_alphas = self.alphas[self.alphas > self.min_sv_alpha]
+        self.support_vectors = X[self.alphas > self.min_sv_alpha, :]
+        self.targets = y[self.alphas > self.min_sv_alpha]
+
+        print('\nNumber of support vectors:', self.support_vectors.shape[0], end='\n\n')
 
         # estimate the bias (Bishop page 334)
 
@@ -131,24 +120,24 @@ class SVM:
 
             scores[i] += self.b
 
-        return scores
+        return np.sign(scores)
 
 
 # run experiment on the reduced iris dataset
 X, y = read_iris_data('iris-pca.txt')
-plot_data(X, y)
-svm = SVM(rbf_kernel, C=5)
+# plot_data(X, y)
+svm = SVM(rbf_kernel, C=10)
 svm.fit(X, y)
 y_hat = svm.predict(X)
-pred = np.ndarray(shape=y_hat.shape)
+# pred = np.ndarray(shape=y_hat.shape)
 
-for i, yi in enumerate(y_hat):
-    if yi > 0:
-        pred[i] = 1.0
-    else:
-        pred[i] = -1.0
+# for i, yi in enumerate(y_hat):
+#     if yi > 0:
+#         pred[i] = 1.0
+#     else:
+#         pred[i] = -1.0
 
-tp = (y == pred).sum()
+tp = (y == y_hat).sum()
 fn = X.shape[0] - tp
 print('Number of misclassified data points:', fn)
 print('Accuracy:', tp / X.shape[0])
@@ -158,37 +147,37 @@ plt.figure()
 c = []
 for i, label in enumerate(y):
     if label == 1.0:
-        if pred[i] == label:
+        if y_hat[i] == label:
             c.append('blue')
         else:
             c.append('fuchsia')
     else:
-        if pred[i] == label:
+        if y_hat[i] == label:
             c.append('orange')
         else:
             c.append('red')
 
 plt.scatter(X[:, 0], X[:, 1], c=c)
-# plt.scatter(svm.support_vectors[:, 0], svm.support_vectors[:, 1], c="red", marker="x")
-# plt.scatter(X[:, 0], X[:, 1], "x", c=c)
-# plt.scatter(X[:, 0], X[:, 1], ".", c=c
+plt.scatter(svm.support_vectors[:, 0], svm.support_vectors[:, 1], c="red", marker="X")
 
 plt.xlabel("x1")
 plt.ylabel("x2")
 plt.title("Iris dataset with decision boundary")
-# plt.show()
 
 steps = 200
 x_range = np.linspace(-1.5, 3, steps)
 y_range = np.linspace(-3, 3, steps)
 x_values, y_values = np.meshgrid(x_range, y_range)
-Z = np.zeros((steps, steps))
 
-# Plot the decision boundary. For that, we will assign a color to each
-# point in the mesh [x_min, m_max]x[y_min, y_max].
-Z = svm.predict(np.c_[x_values.ravel(), y_values.ravel()])
+X = np.array([[x1, x2] for x1, x2 in zip(np.ravel(x_values), np.ravel(y_values))])
+Z = svm.predict(X).reshape(x_values.shape)
+plt.contour(x_values, y_values, Z, [0.0], colors='k', linewidths=1, origin='lower', label="decision boundary")
+plt.contour(x_values, y_values, Z + 1, [0.0], colors='grey', linewidths=1, origin='lower', label="margin")
+plt.contour(x_values, y_values, Z - 1, [0.0], colors='grey', linewidths=1, origin='lower', label="margin")
 
-# Put the result into a color plot
-Z = Z.reshape(x_values.shape)
-plt.contour(x_values, y_values, Z, cmap=plt.cm.Paired)
+# Z = svm.predict(np.array([x_values.ravel(), y_values.ravel()]))
+#
+# # Put the result into a color plot
+# Z = Z.reshape(x_values.shape)
+# plt.contour(x_values, y_values, Z, 1, cmap=plt.cm.Paired, zorder=3)
 plt.show()
