@@ -1,8 +1,8 @@
 import numpy as np
 from matplotlib import pyplot as plt
 
-plt.rcParams['figure.figsize'] = (10.0, 8.0)
-
+plt.rcParams['figure.figsize'] = (15.0, 12.0)
+plt.rcParams.update({'font.size': 18})
 
 def target(x):
     s = np.sin(x)
@@ -10,9 +10,7 @@ def target(x):
 
 
 def kernel(x, z):
-    # if type(x) in (np.float32, float):
     # return theta_1 * np.exp(-.5 * theta_2 * np.abs(x - z) ** 2 / 2)
-
     return np.exp(-(x - z) ** 2)
 
 
@@ -40,7 +38,7 @@ def plot_gp(X, mean, std, iteration):
 
 
 def gpr():
-    noice = 0.001
+    noice = 0.001 #noice
     step_size = 0.005
     X = np.arange(0, 2 * np.pi + step_size, step_size)
     iterations = 16
@@ -52,7 +50,7 @@ def gpr():
     Yn = np.array([target(Xn)])
 
     C = np.array(compute_c(X[j], noice)).reshape((1, 1))
-    C_inv = np.linalg.inv(C)
+    C_inv = np.linalg.solve(C, np.identity(C.shape[0]))
 
     for iteration in range(0, iterations):
         mean = np.zeros(X.shape[0])
@@ -84,6 +82,6 @@ def gpr():
         C_new[-1:] = k.T
 
         C = C_new
-        C_inv = np.linalg.inv(C)
+        C_inv = np.linalg.solve(C, np.identity(C.shape[0]))
 
 gpr()
