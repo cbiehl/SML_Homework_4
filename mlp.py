@@ -1,8 +1,5 @@
-import itertools
-
 import numpy as np
 from matplotlib import pyplot as plt
-from sklearn.metrics import classification_report, confusion_matrix
 
 
 def initialize(hidden_dim, output_dim):
@@ -15,18 +12,17 @@ def initialize(hidden_dim, output_dim):
     # normalize data
     mean = np.mean(X_train)
     std = np.std(X_train)
-    
+
     X_train = (X_train - mean) / std
     X_test = (X_test - mean) / std
 
     # one hot encode labels    
     temp_y_train = np.eye(10)[y_train.reshape(-1)]
     temp_y_test = np.eye(10)[y_test.reshape(-1)]
-    y_train = temp_y_train.reshape(list(y_train.shape)+[10])
-    y_test = temp_y_test.reshape(list(y_test.shape)+[10])
+    y_train = temp_y_train.reshape(list(y_train.shape) + [10])
+    y_test = temp_y_test.reshape(list(y_test.shape) + [10])
 
     # weights for single hidden layer
-    # input size based on data
     W1 = np.random.randn(hidden_dim, X_train.shape[1]) * 0.01
     b1 = np.zeros((hidden_dim,))
     W2 = np.random.randn(output_dim, hidden_dim) * 0.01
@@ -46,6 +42,14 @@ def sigmoid(x):
 def dsigmoid(x):
     # input x is already sigmoid, no need to recompute
     return x * (1.0 - x)
+
+
+def ReLU(x):
+    return x * (x > 0)
+
+
+def dReLU(x):
+    return 1. * (x > 0)
 
 
 def loss(pred, y):
@@ -73,34 +77,35 @@ class NeuralNet(object):
         self.ai = np.ones((self.x_train.shape[1], batch_size))
         self.ah1 = np.ones((self.hidden_dim_1, batch_size))
         self.ao = np.ones((self.output_dim, batch_size))
-        
+
         # classification output for transformed OHE
         self.classification = np.ones(self.ao.shape)
-        
+
         # container for loss progress
         self.loss = None
+        self.test_error = None
 
     def forward_pass(self, x):
         # input activations
         self.ai = x
 
         # hidden_1 activations
-        self.ah1 = sigmoid(np.dot(self.W1, self.ai) + self.b1[:, np.newaxis])
+        self.ah1 = ReLU(np.dot(self.W1, self.ai) + self.b1[:, np.newaxis])
 
         # output activations
-        self.ao = sigmoid(np.dot(self.W2, self.ah1) + self.b2[:, np.newaxis])
+        self.ao = ReLU(np.dot(self.W2, self.ah1) + self.b2[:, np.newaxis])
 
         # transform to OHE for classification
         self.classification = (self.ao == self.ao.max(axis=0, keepdims=0)).astype(float)
 
-    def backward_pass(self):
+    def backward_pass(self, target):
         # calculate error for output
-        out_error = dloss(self.ao, self.y_train)
-        out_delta = np.multiply(out_error, dsigmoid(self.ao))
+        out_error = dloss(self.ao, target)
+        out_delta = np.multiply(out_error, dReLU(self.ao))
 
         # calculate error for hidden_1
         hidden_1_error = np.dot(self.W2.T, out_delta)
-        hidden_1_delta = np.multiply(hidden_1_error, dsigmoid(self.ah1))
+        hidden_1_delta = np.multiply(hidden_1_error, dReLU(self.ah1))
 
         # derivative for W2/b2 (hidden_1 --> out)
         w2_deriv = np.dot(out_delta, self.ah1.T)
@@ -112,40 +117,49 @@ class NeuralNet(object):
 
         return [w1_deriv, b1_deriv, w2_deriv, b2_deriv]
 
-    def train(self, epochs, lr):
-        
+    def train(self, epochs, lr, batch_size=128):
+
         self.loss = np.zeros((epochs,))
         self.test_error = np.zeros((epochs,))
-        
-        for epoch in range(epochs):           
-            # compute output of forward pass
-            self.forward_pass(self.x_train)
 
-            # back prop error
-            w1_deriv, b1_deriv, w2_deriv, b2_deriv = self.backward_pass()
-            
+        for epoch in range(epochs):
+
+            indices = np.arange(self.x_train.shape[1])
+            np.random.shuffle(indices)
+
+            for i in range(0, self.x_train.shape[1] - batch_size + 1, batch_size):
+                excerpt = indices[i:i + batch_size]
+
+                batch_x, batch_y = self.x_train[:, excerpt], self.y_train[:, excerpt]
+
+                # compute output of forward pass
+                self.forward_pass(batch_x)
+
+                # back prop error
+                w1_deriv, b1_deriv, w2_deriv, b2_deriv = self.backward_pass(batch_y)
+
+                # adjust weights with simple SGD
+                self.W1 -= lr * w1_deriv
+                self.b1 -= lr * b1_deriv
+                self.W2 -= lr * w2_deriv
+                self.b2 -= lr * b2_deriv
+
             # compute error
             self.forward_pass(self.x_test)
             error = loss(self.ao, self.y_test)
             self.loss[epoch] = error
-            
+
             t = 0
             for i, pred in enumerate(self.classification.T):
                 if np.argmax(self.y_test.T[i]) == np.argmax(pred):
                     t += 1
-    
+
             acc = t / self.classification.shape[1]
             self.test_error[epoch] = 1 - acc
-            
+
             # print progress 
             if (epoch + 1) % 50 == 0:
-                print("Loss for epoch {}/{}: {:.5f}, accuracy: {:.5f}".format(epoch + 1, epochs, error, acc))
-
-            # adjust weights with simple SGD
-            self.W1 -= lr * w1_deriv
-            self.b1 -= lr * b1_deriv
-            self.W2 -= lr * w2_deriv
-            self.b2 -= lr * b2_deriv
+                print("Epoch {}/{} -- loss: {:.5f} -- val_acc: {:.5f}".format(epoch + 1, epochs, error, acc))
 
     def predict(self, x):
         self.forward_pass(x)
@@ -164,16 +178,17 @@ class NeuralNet(object):
         plt.plot(self.test_error)
         plt.xlabel("Epochs")
         plt.ylabel("Test Error")
-        plt.show()    
+        plt.show()
 
-nn = NeuralNet(hidden_dim=100, output_dim=10)
-nn.train(epochs=5000, lr=.1)
+
+nn = NeuralNet(hidden_dim=50, output_dim=10)
+nn.train(epochs=500, lr=.005)
 
 y_hat = nn.predict(nn.x_test)
 t = 0
 for i, pred in enumerate(y_hat.T):
     if np.argmax(nn.y_test.T[i]) == np.argmax(pred):
         t += 1
-    
+
 print("Accuracy:", t / y_hat.shape[1])
 nn.visualize_prediction(nn.y_test.T, y_hat.T)
